@@ -76,6 +76,12 @@ export class PostProcessing {
   private vignettePass: ShaderPass;
   private caPass: ShaderPass;
 
+  // Ultra-fast single-pass direct screen blit for Star Trail mode
+  private screenQuadScene: THREE.Scene;
+  private screenQuadCamera: THREE.OrthographicCamera;
+  private screenQuadMesh: THREE.Mesh;
+  private screenQuadMat: THREE.MeshBasicMaterial;
+
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
     this.renderer = renderer;
     this.scene = scene;
@@ -87,6 +93,12 @@ export class PostProcessing {
       magFilter: THREE.LinearFilter,
       minFilter: THREE.LinearFilter,
     });
+
+    this.screenQuadScene = new THREE.Scene();
+    this.screenQuadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.screenQuadMat = new THREE.MeshBasicMaterial({ depthTest: false, depthWrite: false });
+    this.screenQuadMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.screenQuadMat);
+    this.screenQuadScene.add(this.screenQuadMesh);
 
     this.composer = new EffectComposer(renderer);
     
@@ -127,32 +139,22 @@ export class PostProcessing {
 
   public render(starTrailCamera?: StarTrailCamera) {
     if (starTrailCamera && starTrailCamera.active) {
-      // 1. Render pristine raw 3D scene (no post-processing)
+      // 1. Render pristine raw 3D scene ONCE (zero double scene rendering!)
       this.renderer.setRenderTarget(this.rawTarget);
       this.renderer.render(this.scene, this.camera);
       this.renderer.setRenderTarget(null);
 
-      // 2. Accumulate raw frame with Max-Hold (NO bloom feedback loop!)
+      // 2. Accumulate raw frame with Max-Hold
       const accumTexture = starTrailCamera.accumulateRawFrame(this.renderer, this.rawTarget.texture);
 
-      // 3. Provide clean accumulated frame to starTrailPass
-      this.starTrailPass.uniforms.uActive.value = 1.0;
-      this.starTrailPass.uniforms.tAccum.value = accumTexture;
-
-      // 4. Moderate bloom for star trail: subtle, clean, razor-sharp starlight
-      const prevStrength = this.bloomPass.strength;
-      const prevRadius = this.bloomPass.radius;
-      this.bloomPass.strength = 0.18;
-      this.bloomPass.radius = 0.15;
-
-      this.composer.render();
-
-      this.bloomPass.strength = prevStrength;
-      this.bloomPass.radius = prevRadius;
-    } else {
-      this.starTrailPass.uniforms.uActive.value = 0.0;
-      this.composer.render();
+      // 3. Ultra-fast single-pass direct screen blit (bypasses heavy 5-pass bloom and composer passes)
+      this.screenQuadMat.map = accumTexture;
+      this.renderer.render(this.screenQuadScene, this.screenQuadCamera);
+      return;
     }
+
+    this.starTrailPass.uniforms.uActive.value = 0.0;
+    this.composer.render();
   }
 
   public resize(width: number, height: number) {
@@ -163,6 +165,8 @@ export class PostProcessing {
 
   public dispose() {
     this.rawTarget.dispose();
+    this.screenQuadMesh.geometry.dispose();
+    this.screenQuadMat.dispose();
     this.composer.passes.forEach((p: any) => p.dispose?.());
   }
 }

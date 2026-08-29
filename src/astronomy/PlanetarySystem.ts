@@ -849,9 +849,9 @@ export class PlanetarySystem {
     const planets = this.calculatePlanets(date, latitude, longitude);
     const R = 995; // Just slightly inside the star sphere
 
-    // Dynamically update Moon phase on the NASA photographic texture
+    // Dynamically update Moon phase on the NASA photographic texture (optimized threshold prevents canvas redraw lag during fast time speeds)
     const moonIllum = SunCalc.getMoonIllumination(date);
-    if (Math.abs(moonIllum.phase - this.lastRenderedMoonPhase) > 0.003) {
+    if (Math.abs(moonIllum.phase - this.lastRenderedMoonPhase) > 0.02) {
       this.redrawMoon(moonIllum.phase);
     }
 

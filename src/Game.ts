@@ -112,6 +112,9 @@ export class Game {
   private netUpdateTimer: number = 0;
   private activeOperatingTelescopeId: string | null = null;
   private isSpectatingTelescope: boolean = false;
+  private planetStoreUpdateTimer = 0;
+  private lastStarTrailNotifTime = 0;
+  private lastNetTimeSyncTime = 0;
 
   // GoTo auto-slew animation state
   private isGoToSlewing = false;
@@ -354,7 +357,11 @@ export class Game {
       state.setTimeScale(pkt.timeScale);
       state.setTime(new Date(pkt.gameTimeMs));
       if (pkt.isStarTrailAccelerating) {
-        this.hud.showNotification('隊友正在長曝光旋轉夜空，天球時間飛速流動中', 'info');
+        const now = performance.now();
+        if (now - this.lastStarTrailNotifTime > 12000) {
+          this.lastStarTrailNotifTime = now;
+          this.hud.showNotification('隊友正在長曝光旋轉夜空，天球時間飛速流動中', 'info');
+        }
       }
     });
 
@@ -477,7 +484,11 @@ export class Game {
     this.deepSkyObjects.update(currentCameraFov, isTelescope, effectiveLimitingMag);
     this.planetarySystem.update(gameTime, currentCameraFov, loc.latitude, loc.longitude);
     const planets = this.planetarySystem.getPlanets();
-    state.setPlanets(planets);
+    this.planetStoreUpdateTimer += deltaTime;
+    if (this.planetStoreUpdateTimer > 2.0) {
+      this.planetStoreUpdateTimer = 0;
+      state.setPlanets(planets);
+    }
 
     // ---- Constellations & Laser Pointer ----
     this.constellations.update(this.sunElevation);
@@ -754,13 +765,17 @@ export class Game {
         this.terrain.updateLocation(state.currentLocation);
       }
       if (state.timeScale !== prevState.timeScale && this.networkManager && this.networkManager.isConnected()) {
-        this.networkManager.broadcast({
-          type: PacketType.TIME_SYNC,
-          timeScale: state.timeScale,
-          gameTimeMs: state.currentTime.getTime(),
-          senderId: this.networkManager.localId,
-          isStarTrailAccelerating: Math.abs(state.timeScale) > 60,
-        });
+        const now = performance.now();
+        if (now - this.lastNetTimeSyncTime > 250) {
+          this.lastNetTimeSyncTime = now;
+          this.networkManager.broadcast({
+            type: PacketType.TIME_SYNC,
+            timeScale: state.timeScale,
+            gameTimeMs: state.currentTime.getTime(),
+            senderId: this.networkManager.localId,
+            isStarTrailAccelerating: Math.abs(state.timeScale) > 60,
+          });
+        }
       }
     });
 

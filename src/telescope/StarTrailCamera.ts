@@ -95,6 +95,7 @@ export class StarTrailCamera {
   private currentSpeedMagnitude = 60;
   private currentTimeScale = 60;
   private savedTimeScale = 1;
+  private lastStoreUpdateTime = 0;
 
   // UI Viewfinder
   private overlay: HTMLElement | null = null;
@@ -272,7 +273,15 @@ export class StarTrailCamera {
       this.currentTimeScale = Math.sign(this.currentTimeScale || 1) * this.currentSpeedMagnitude;
     }
 
-    gameStore.getState().setTimeScale(Math.round(this.currentTimeScale));
+    // Throttle store updates to ~4Hz to prevent subscriber flood, DOM thrashing, and WebRTC network congestion
+    const now = performance.now();
+    if (now - this.lastStoreUpdateTime > 200) {
+      this.lastStoreUpdateTime = now;
+      const roundedScale = Math.round(this.currentTimeScale);
+      if (gameStore.getState().timeScale !== roundedScale) {
+        gameStore.getState().setTimeScale(roundedScale);
+      }
+    }
 
     const elapsed = (performance.now() - this.startTime) / 1000;
     const roundedScale = Math.round(this.currentTimeScale);
