@@ -99,7 +99,11 @@ export class NetworkManager {
   public joinRoom(roomCode: string): Promise<string> {
     return new Promise((resolve, reject) => {
       this.disconnect();
-      const code = roomCode.trim().toUpperCase();
+      let code = roomCode.trim().toUpperCase();
+      // If user only typed numbers (e.g. "8821"), automatically prepend "STAR-"
+      if (/^\d+$/.test(code)) {
+        code = `STAR-${code}`;
+      }
       const hostPeerId = `stargazer-room-${code}`;
 
       this.isHost = false;

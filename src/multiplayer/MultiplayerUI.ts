@@ -138,7 +138,7 @@ export class MultiplayerUI {
               <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
             </div>
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="mp-room-input" placeholder="輸入5碼房號 (如 STAR-8821)" style="flex: 1; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 13px;" />
+              <input type="text" id="mp-room-input" placeholder="輸入房號 (可直接輸入數字如 8821)" style="flex: 1; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 13px;" />
               <button id="mp-join-btn" style="padding: 8px 20px; background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; border-radius: 6px; color: #38bdf8; font-weight: 600; font-size: 13px; cursor: pointer;">加入</button>
             </div>
           </div>
