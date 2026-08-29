@@ -292,8 +292,8 @@ export class HUD {
         verBadge.style.background = 'rgba(56, 189, 248, 0.12)';
         verBadge.style.borderRadius = '6px';
         verBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
-        verBadge.textContent = 'v2.1.2';
-        verBadge.title = 'v2.1.2';
+        verBadge.textContent = 'v2.1.3';
+        verBadge.title = 'v2.1.3';
 
         topRight.appendChild(this.moneyDisplay);
         topRight.appendChild(this.weatherDisplay);
@@ -321,6 +321,7 @@ export class HUD {
         this.shortcutGuide = document.createElement('div');
         this.shortcutGuide.className = 'hud-panel bottom-right';
         this.shortcutGuide.innerHTML = `
+            <span><span class="key-tag">Q</span>頭燈</span>
             <span><span class="key-tag">Z</span>平躺</span>
             <span><span class="key-tag">X</span>指星筆</span>
             <span><span class="key-tag">Alt</span>游標</span>
@@ -328,7 +329,6 @@ export class HUD {
             <span><span class="key-tag">L</span>地點</span>
             <span><span class="key-tag">B</span>星曆倒流</span>
             <span><span class="key-tag">M</span>音量</span>
-            <span><span class="key-tag">H</span>說明</span>
             <span><span class="key-tag">U</span>無UI</span>
         `;
 

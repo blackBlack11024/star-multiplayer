@@ -48,6 +48,7 @@ import { MultiplayerTelescopes } from './multiplayer/MultiplayerTelescopes';
 import { CampLaptop } from './multiplayer/CampLaptop';
 import { MultiplayerUI } from './multiplayer/MultiplayerUI';
 import { PacketType, CampPhotoSharePacket } from './multiplayer/NetworkProtocol';
+import { Headlamp } from './world/Headlamp';
 
 type ProgressCallback = (pct: number, text: string) => void;
 
@@ -68,6 +69,7 @@ export class Game {
   private spaceStation!: SpaceStation;
   private meteorSystem!: MeteorSystem;
   private laserPointer!: LaserPointer;
+  private headlamp!: Headlamp;
 
   private atmosphere!: AtmosphereManager;
   private timeManager!: TimeManager;
@@ -240,6 +242,7 @@ export class Game {
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.starTrailCamera = new StarTrailCamera(this.renderer, window.innerWidth, window.innerHeight);
     this.playerController.setStarTrailCamera(this.starTrailCamera);
+    this.headlamp = new Headlamp(this.camera);
 
     // ---- Game systems ----
     progress(0.8, '正在載入遊戲與任務系統...');
@@ -542,6 +545,7 @@ export class Game {
           laserActive: isLaserActive,
           laserDir: isLaserActive ? [forward.x, forward.y, forward.z] : undefined,
           laserTarget: isLaserActive ? this.laserPointer?.getTargetName() : undefined,
+          headlampMode: this.headlamp.getMode(),
         });
 
         const currentTelId = this.activeOperatingTelescopeId || `tel_${this.networkManager.localId}`;
@@ -876,6 +880,19 @@ export class Game {
       this.hud.showNotification('已將您的望遠鏡架設於當前位置！(靠近按 E 可觀測)', 'success');
     });
 
+    // Toggle player headlamp (Off -> Red -> White -> Off)
+    document.addEventListener('toggle-headlamp', () => {
+      const mode = this.headlamp.toggle();
+      this.audioManager.playClick();
+      if (mode === 'red') {
+        this.hud.showNotification('頭燈：天文紅光模式 (保護暗適應)', 'info');
+      } else if (mode === 'white') {
+        this.hud.showNotification('頭燈：日常白光模式 (高亮度照明)', 'info');
+      } else {
+        this.hud.showNotification('頭燈：已關閉', 'info');
+      }
+    });
+
     // Multiplayer chat input
     document.addEventListener('open-multiplayer-chat', () => {
       this.multiplayerUI.openChat();
@@ -1010,6 +1027,12 @@ export class Game {
 
   /** Handle game mode transitions. */
   private onModeChange(from: GameMode, to: GameMode): void {
+    if (to === GameMode.Telescope || to === GameMode.Studio) {
+      this.headlamp.setVisible(false);
+    } else if (to === GameMode.Walk) {
+      this.headlamp.setVisible(true);
+    }
+
     if (to === GameMode.Telescope) {
       this.savedWalkPos.copy(this.camera.position);
       this.savedWalkRot.copy(this.camera.rotation);
@@ -1148,6 +1171,7 @@ export class Game {
     this.multiplayerTelescopes.dispose();
     this.campLaptop.dispose();
     this.multiplayerUI.dispose();
+    this.headlamp.dispose();
     this.networkManager.disconnect();
     this.starField.dispose();
     this.deepSkyObjects.dispose();

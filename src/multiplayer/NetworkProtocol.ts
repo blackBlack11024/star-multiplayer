@@ -41,6 +41,7 @@ export interface PlayerUpdatePacket {
   laserActive: boolean;
   laserDir?: [number, number, number];
   laserTarget?: string;
+  headlampMode?: 'off' | 'red' | 'white';
 }
 
 export interface ChatBubblePacket {

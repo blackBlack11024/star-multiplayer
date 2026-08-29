@@ -229,6 +229,10 @@ export class PlayerController {
           if (this.isLyingDown) this.toggleLieDown();
           document.dispatchEvent(new CustomEvent('player-interact-e'));
           break;
+        case 'KeyQ':
+        case 'KeyH':
+          document.dispatchEvent(new CustomEvent('toggle-headlamp'));
+          break;
         case 'KeyF':
           if (this.isLyingDown) this.toggleLieDown();
           state.setGameMode(GameMode.Studio);
@@ -292,8 +296,7 @@ export class PlayerController {
       case 'KeyC': state.toggleConstellations(); break;
       case 'KeyN': state.toggleStarNames(); break;
       case 'KeyM': state.toggleMute(); break;
-      case 'KeyU':
-      case 'KeyH': state.toggleUIVisibility(); break;
+      case 'KeyU': state.toggleUIVisibility(); break;
     }
   }
 

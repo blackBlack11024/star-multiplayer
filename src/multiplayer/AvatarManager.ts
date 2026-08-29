@@ -14,6 +14,7 @@ export interface RemotePlayer {
   leftArm: THREE.Mesh;
   rightArm: THREE.Mesh;
   redHeadlamp: THREE.PointLight;
+  headlampBulb: THREE.Mesh;
   laserBeam: THREE.Line;
   laserBeamGeo: THREE.BufferGeometry;
   laserTargetBadge: HTMLElement;
@@ -279,6 +280,7 @@ export class AvatarManager {
       leftArm,
       rightArm,
       redHeadlamp: redPointLight,
+      headlampBulb: redBulb,
       laserBeam,
       laserBeamGeo,
       laserTargetBadge,
@@ -303,6 +305,22 @@ export class AvatarManager {
     p.targetYaw = pkt.yaw;
     p.targetPitch = pkt.pitch;
     p.currentPosture = pkt.posture;
+
+    // Headlamp state sync
+    if (pkt.headlampMode === 'off') {
+      p.redHeadlamp.visible = false;
+      (p.headlampBulb.material as THREE.MeshBasicMaterial).color.setHex(0x222222);
+    } else if (pkt.headlampMode === 'white') {
+      p.redHeadlamp.visible = true;
+      p.redHeadlamp.color.setHex(0xfff5ea);
+      p.redHeadlamp.intensity = 1.0;
+      (p.headlampBulb.material as THREE.MeshBasicMaterial).color.setHex(0xffffff);
+    } else {
+      p.redHeadlamp.visible = true;
+      p.redHeadlamp.color.setHex(0xff2222);
+      p.redHeadlamp.intensity = 0.6;
+      (p.headlampBulb.material as THREE.MeshBasicMaterial).color.setHex(0xff2222);
+    }
 
     // Laser pointer sync
     if (pkt.laserActive && pkt.laserDir) {
