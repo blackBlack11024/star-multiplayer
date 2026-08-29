@@ -21,15 +21,14 @@ export class LaserPointer {
   // Visual Meshes
   private handheldBeamLine: THREE.Line;
   private targetDotSprite: THREE.Sprite;
+  private labelElement: HTMLElement;
+  private currentRayDir = new THREE.Vector3(0, 0, -1);
 
   // State
   private mouseCoords = new THREE.Vector2(0, 0); // NDC (-1 to 1)
   private isPointerActive = false;
   private isMounted = false;
   private lastIdentifiedTarget: any = null;
-
-  // DOM label
-  private labelElement: HTMLElement;
 
   constructor(
     scene: THREE.Scene,
@@ -138,6 +137,7 @@ export class LaserPointer {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(this.mouseCoords, this.camera);
       const rayDir = raycaster.ray.direction.clone().normalize();
+      this.currentRayDir.copy(rayDir);
 
       // Laser emitter origin: bottom-right of camera
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -219,6 +219,10 @@ export class LaserPointer {
 
   public getTargetName(): string | undefined {
     return this.lastIdentifiedTarget?.name;
+  }
+
+  public getRayDirection(): THREE.Vector3 {
+    return this.currentRayDir;
   }
 
   public setVisibleForPhoto(visible: boolean) {

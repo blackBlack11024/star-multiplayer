@@ -544,8 +544,7 @@ export class Game {
         euler.setFromQuaternion(this.camera.quaternion);
         const posture = this.playerController.getPosture();
         const isLaserActive = this.laserPointer?.isActive() || false;
-        const forward = new THREE.Vector3();
-        this.camera.getWorldDirection(forward);
+        const laserRayDir = isLaserActive ? this.laserPointer?.getRayDirection() : undefined;
 
         this.networkManager.broadcast({
           type: PacketType.PLAYER_UPDATE,
@@ -555,7 +554,7 @@ export class Game {
           pitch: euler.x,
           posture,
           laserActive: isLaserActive,
-          laserDir: isLaserActive ? [forward.x, forward.y, forward.z] : undefined,
+          laserDir: laserRayDir ? [laserRayDir.x, laserRayDir.y, laserRayDir.z] : undefined,
           laserTarget: isLaserActive ? this.laserPointer?.getTargetName() : undefined,
           headlampMode: this.headlamp.getMode(),
         });

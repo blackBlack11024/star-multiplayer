@@ -17,7 +17,11 @@ export interface RemotePlayer {
   headlampBulb: THREE.Mesh;
   laserBeam: THREE.Line;
   laserBeamGeo: THREE.BufferGeometry;
+  laserTipSprite: THREE.Sprite;
   laserTargetBadge: HTMLElement;
+  laserActive: boolean;
+  laserDir: THREE.Vector3;
+  laserTargetText: string;
   speechBubbleEl: HTMLElement;
   nameTagEl: HTMLElement;
   containerEl: HTMLElement;
@@ -34,6 +38,8 @@ export class AvatarManager {
   private camera: THREE.Camera;
   private domOverlay: HTMLElement;
   private players: Map<string, RemotePlayer> = new Map();
+  private laserDotTexture: THREE.Texture;
+  private isPhotoHidingLasers = false;
 
   constructor(scene: THREE.Scene, camera: THREE.Camera) {
     this.scene = scene;
@@ -45,6 +51,23 @@ export class AvatarManager {
     this.domOverlay.style.pointerEvents = 'none';
     this.domOverlay.style.zIndex = '120';
     document.getElementById('ui-overlay')?.appendChild(this.domOverlay);
+
+    // Glowing green target dot texture for laser pointer tips
+    const dotCanvas = document.createElement('canvas');
+    dotCanvas.width = 64;
+    dotCanvas.height = 64;
+    const ctx = dotCanvas.getContext('2d')!;
+    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.3, 'rgba(52, 211, 153, 0.9)');
+    grad.addColorStop(0.7, 'rgba(16, 185, 129, 0.35)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(32, 32, 30, 0, Math.PI * 2);
+    ctx.fill();
+
+    this.laserDotTexture = new THREE.CanvasTexture(dotCanvas);
   }
 
   /** Spawn or update a remote player */
@@ -199,9 +222,9 @@ export class AvatarManager {
     rightArm.position.set(0.4, 0.75, 0);
     group.add(leftArm, rightArm);
 
-    // ---- 5. Green Laser Pointer Beam ----
+    // ---- 5. Green Laser Pointer Beam & Sky Tip Sprite ----
     const laserBeamGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0.8, 0.3),
+      new THREE.Vector3(0, 0, 0),
       new THREE.Vector3(0, 50, 0),
     ]);
     const laserMat = new THREE.LineBasicMaterial({
@@ -211,8 +234,20 @@ export class AvatarManager {
       opacity: 0.85,
     });
     const laserBeam = new THREE.Line(laserBeamGeo, laserMat);
+    laserBeam.frustumCulled = false;
     laserBeam.visible = false;
-    group.add(laserBeam);
+    this.scene.add(laserBeam);
+
+    const dotMat = new THREE.SpriteMaterial({
+      map: this.laserDotTexture,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const laserTipSprite = new THREE.Sprite(dotMat);
+    laserTipSprite.scale.set(14, 14, 1);
+    laserTipSprite.visible = false;
+    this.scene.add(laserTipSprite);
 
     this.scene.add(group);
 
@@ -252,20 +287,15 @@ export class AvatarManager {
     nameTagEl.style.fontWeight = '600';
     nameTagEl.style.letterSpacing = '0.04em';
 
-    const laserTargetBadge = document.createElement('div');
-    laserTargetBadge.className = 'remote-laser-badge';
-    laserTargetBadge.style.display = 'none';
-    laserTargetBadge.style.background = 'rgba(34, 197, 94, 0.2)';
-    laserTargetBadge.style.color = '#86efac';
-    laserTargetBadge.style.border = '1px solid #22c55e';
-    laserTargetBadge.style.borderRadius = '4px';
-    laserTargetBadge.style.padding = '2px 6px';
-    laserTargetBadge.style.fontSize = '11px';
-
     containerEl.appendChild(speechBubbleEl);
-    containerEl.appendChild(laserTargetBadge);
     containerEl.appendChild(nameTagEl);
     this.domOverlay.appendChild(containerEl);
+
+    // Floating 2D label at the sky tip of the laser beam
+    const laserTargetBadge = document.createElement('div');
+    laserTargetBadge.className = 'laser-target-label';
+    laserTargetBadge.style.display = 'none';
+    this.domOverlay.appendChild(laserTargetBadge);
 
     this.players.set(data.id, {
       id: data.id,
@@ -283,7 +313,11 @@ export class AvatarManager {
       headlampBulb: redBulb,
       laserBeam,
       laserBeamGeo,
+      laserTipSprite,
       laserTargetBadge,
+      laserActive: false,
+      laserDir: new THREE.Vector3(0, 0.7, -0.7).normalize(),
+      laserTargetText: '',
       speechBubbleEl,
       nameTagEl,
       containerEl,
@@ -323,26 +357,11 @@ export class AvatarManager {
     }
 
     // Laser pointer sync
-    if (pkt.laserActive && pkt.laserDir) {
-      p.laserBeam.visible = true;
-      const start = new THREE.Vector3(0, 0.8, 0.3);
-      const end = new THREE.Vector3(
-        start.x + pkt.laserDir[0] * 350,
-        start.y + pkt.laserDir[1] * 350,
-        start.z + pkt.laserDir[2] * 350
-      );
-      p.laserBeamGeo.setFromPoints([start, end]);
-
-      if (pkt.laserTarget) {
-        p.laserTargetBadge.textContent = `指向天體：${pkt.laserTarget}`;
-        p.laserTargetBadge.style.display = 'block';
-      } else {
-        p.laserTargetBadge.style.display = 'none';
-      }
-    } else {
-      p.laserBeam.visible = false;
-      p.laserTargetBadge.style.display = 'none';
+    p.laserActive = Boolean(pkt.laserActive);
+    if (pkt.laserDir) {
+      p.laserDir.set(pkt.laserDir[0], pkt.laserDir[1], pkt.laserDir[2]).normalize();
     }
+    p.laserTargetText = pkt.laserTarget || '';
   }
 
   /** Display a comic speech bubble over a player's head */
@@ -369,15 +388,22 @@ export class AvatarManager {
     if (!p) return;
 
     this.scene.remove(p.group);
+    this.scene.remove(p.laserBeam);
+    this.scene.remove(p.laserTipSprite);
+    p.laserBeamGeo.dispose();
+    p.laserTipSprite.material.dispose();
+    p.laserTargetBadge.remove();
     p.containerEl.remove();
     this.players.delete(playerId);
   }
 
   /** Temporarily hide all laser beams for pristine photography */
   public hideLasersForPhoto(hide: boolean) {
+    this.isPhotoHidingLasers = hide;
     this.players.forEach((p) => {
       if (hide) {
         p.laserBeam.visible = false;
+        p.laserTipSprite.visible = false;
         p.laserTargetBadge.style.display = 'none';
       }
     });
@@ -395,7 +421,6 @@ export class AvatarManager {
 
       // Handle Postures & Animations
       if (p.currentPosture === 'lie_down') {
-        // Flat on grass looking up at zenith
         p.group.rotation.x = -Math.PI / 2;
         p.group.rotation.y = p.targetYaw;
         p.group.position.y = 0.22;
@@ -404,7 +429,6 @@ export class AvatarManager {
         p.leftArm.rotation.x = 0;
         p.rightArm.rotation.x = 0;
       } else if (p.currentPosture === 'in_telescope') {
-        // Bent over eyepiece
         p.group.rotation.x = 0;
         p.group.rotation.y = p.targetYaw;
         p.headGroup.rotation.x = 0.45;
@@ -425,7 +449,6 @@ export class AvatarManager {
           p.leftArm.rotation.x = -legSwing * 0.7;
           p.rightArm.rotation.x = legSwing * 0.7;
         } else {
-          // Idle breathing
           p.leftLeg.rotation.x = 0;
           p.rightLeg.rotation.x = 0;
           p.leftArm.rotation.x = Math.sin(p.animTime * 2) * 0.05;
@@ -433,7 +456,42 @@ export class AvatarManager {
         }
       }
 
-      // Project overhead nametag and speech bubble to 2D screen space
+      // 1. Update Laser Beam & Sky Target Badge at the beam tip
+      if (p.laserActive && !this.isPhotoHidingLasers) {
+        // Origin of beam in world space (around remote player's chest level: height ~1.3m)
+        const beamStart = p.group.position.clone().add(new THREE.Vector3(0, 1.3, 0));
+        const beamEnd = beamStart.clone().addScaledVector(p.laserDir, 1200);
+        const skyTip = beamStart.clone().addScaledVector(p.laserDir, 800);
+
+        p.laserBeamGeo.setFromPoints([beamStart, beamEnd]);
+        p.laserBeam.visible = true;
+
+        p.laserTipSprite.position.copy(skyTip);
+        p.laserTipSprite.visible = true;
+
+        if (p.laserTargetText) {
+          tempVec.copy(skyTip).project(this.camera);
+          // Check if tip is in front of camera
+          if (tempVec.z < 1.0) {
+            const x = (tempVec.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(tempVec.y * 0.5) + 0.5) * window.innerHeight;
+            p.laserTargetBadge.textContent = p.laserTargetText;
+            p.laserTargetBadge.style.display = 'block';
+            p.laserTargetBadge.style.left = `${x}px`;
+            p.laserTargetBadge.style.top = `${y}px`;
+          } else {
+            p.laserTargetBadge.style.display = 'none';
+          }
+        } else {
+          p.laserTargetBadge.style.display = 'none';
+        }
+      } else {
+        p.laserBeam.visible = false;
+        p.laserTipSprite.visible = false;
+        p.laserTargetBadge.style.display = 'none';
+      }
+
+      // 2. Project overhead nametag and speech bubble to 2D screen space
       tempVec.set(p.group.position.x, p.group.position.y + 1.85, p.group.position.z);
       tempVec.project(this.camera);
 
@@ -453,9 +511,15 @@ export class AvatarManager {
   public dispose() {
     this.players.forEach((p) => {
       this.scene.remove(p.group);
+      this.scene.remove(p.laserBeam);
+      this.scene.remove(p.laserTipSprite);
+      p.laserBeamGeo.dispose();
+      p.laserTipSprite.material.dispose();
+      p.laserTargetBadge.remove();
       p.containerEl.remove();
     });
     this.players.clear();
+    this.laserDotTexture.dispose();
     this.domOverlay.remove();
   }
 }
