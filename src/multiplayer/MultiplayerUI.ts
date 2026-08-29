@@ -193,6 +193,11 @@ export class MultiplayerUI {
   private setupEvents() {
     document.addEventListener('toggle-multiplayer-modal', () => this.toggleModal());
     this.modalEl.querySelector('#mp-close-btn')?.addEventListener('click', () => this.closeModal());
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.isModalOpen) {
+        this.closeModal();
+      }
+    });
 
     const nameInput = this.modalEl.querySelector('#mp-player-name') as HTMLInputElement;
     nameInput.addEventListener('change', () => {
@@ -350,6 +355,9 @@ export class MultiplayerUI {
   public openModal() {
     this.isModalOpen = true;
     this.modalEl.style.display = 'flex';
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
   }
 
   public closeModal() {

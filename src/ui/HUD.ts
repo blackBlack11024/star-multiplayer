@@ -17,6 +17,7 @@ export class HUD {
     private promptDisplay: HTMLElement;
     private telescopeMarker: HTMLElement;
     private studioMarker: HTMLElement;
+    private laptopMarker: HTMLElement;
     private starTargetBadge: HTMLElement;
     private audioModal: HTMLElement;
     private timeButtons: HTMLButtonElement[] = [];
@@ -291,8 +292,8 @@ export class HUD {
         verBadge.style.background = 'rgba(56, 189, 248, 0.12)';
         verBadge.style.borderRadius = '6px';
         verBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
-        verBadge.textContent = 'v2.1.1';
-        verBadge.title = 'v2.1.1';
+        verBadge.textContent = 'v2.1.2';
+        verBadge.title = 'v2.1.2';
 
         topRight.appendChild(this.moneyDisplay);
         topRight.appendChild(this.weatherDisplay);
@@ -345,6 +346,10 @@ export class HUD {
         this.studioMarker.className = 'waypoint-marker studio';
         this.studioMarker.innerHTML = `<span>工作室</span><span class="key-hint">F</span><span class="dist" style="opacity:0.6"></span>`;
 
+        this.laptopMarker = document.createElement('div');
+        this.laptopMarker.className = 'waypoint-marker laptop';
+        this.laptopMarker.innerHTML = `<span>營地終端筆電</span><span class="key-hint">E</span><span class="dist" style="opacity:0.6"></span>`;
+
         // Looking Star Identifier Badge (Walk / Binoculars mode)
         this.starTargetBadge = document.createElement('div');
         this.starTargetBadge.className = 'hud-star-target-badge';
@@ -358,6 +363,7 @@ export class HUD {
         this.container.appendChild(this.promptDisplay);
         this.container.appendChild(this.telescopeMarker);
         this.container.appendChild(this.studioMarker);
+        this.container.appendChild(this.laptopMarker);
         this.container.appendChild(this.starTargetBadge);
 
         overlay.appendChild(this.container);
@@ -721,11 +727,12 @@ export class HUD {
         `;
     }
 
-    public updateWaypoints(camera: THREE.Camera, telescopePos: THREE.Vector3, studioPos: THREE.Vector3) {
+    public updateWaypoints(camera: THREE.Camera, telescopePos: THREE.Vector3, studioPos: THREE.Vector3, laptopPos?: THREE.Vector3) {
         const state = gameStore.getState();
         if (state.gameMode !== GameMode.Walk) {
             this.telescopeMarker.style.display = 'none';
             this.studioMarker.style.display = 'none';
+            this.laptopMarker.style.display = 'none';
             return;
         }
 
@@ -761,6 +768,27 @@ export class HUD {
             if (distSpan) distSpan.textContent = `(${studioDist.toFixed(1)}m)`;
         } else {
             this.studioMarker.style.display = 'none';
+        }
+
+        // Project Camp Laptop Marker
+        if (laptopPos) {
+            const laptopVec = laptopPos.clone().add(new THREE.Vector3(0, 1.2, 0));
+            const laptopDist = camera.position.distanceTo(laptopPos);
+            laptopVec.project(camera);
+
+            if (laptopVec.z < 1.0) {
+                const x = (laptopVec.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-laptopVec.y * 0.5 + 0.5) * window.innerHeight;
+                this.laptopMarker.style.left = `${x}px`;
+                this.laptopMarker.style.top = `${y}px`;
+                this.laptopMarker.style.display = 'flex';
+                const distSpan = this.laptopMarker.querySelector('.dist') as HTMLElement;
+                if (distSpan) distSpan.textContent = `(${laptopDist.toFixed(1)}m)`;
+            } else {
+                this.laptopMarker.style.display = 'none';
+            }
+        } else {
+            this.laptopMarker.style.display = 'none';
         }
     }
 

@@ -8,15 +8,17 @@ export class CampLaptop {
   private modalEl: HTMLElement;
   private isModalOpen = false;
   private photos: CampPhotoSharePacket[] = [];
-  public tablePosition = new THREE.Vector3(2.5, 0, 1.8);
+  public tablePosition = new THREE.Vector3(3.2, 0, -2.2);
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
     this.tableGroup = this.createTableAndLaptop();
     this.tableGroup.position.copy(this.tablePosition);
+    this.tableGroup.rotation.y = -Math.PI / 4;
     this.scene.add(this.tableGroup);
 
     this.modalEl = this.createModalDOM();
+    this.setupEvents();
   }
 
   private createTableAndLaptop(): THREE.Group {
@@ -76,7 +78,7 @@ export class CampLaptop {
     laptopGroup.add(lidGroup);
     root.add(laptopGroup);
 
-    // Red Camping Lantern beside laptop
+    // Cyan Field Lantern beside laptop
     const lanternGroup = new THREE.Group();
     lanternGroup.position.set(0.45, 0.77, 0.15);
 
@@ -88,14 +90,14 @@ export class CampLaptop {
 
     const lanternGlass = new THREE.Mesh(
       new THREE.CylinderGeometry(0.04, 0.04, 0.08, 12),
-      new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.85 })
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 })
     );
     lanternGlass.position.y = 0.14;
 
-    const redLight = new THREE.PointLight(0xff3333, 0.8, 3.5);
-    redLight.position.y = 0.15;
+    const lanternLight = new THREE.PointLight(0x38bdf8, 2.5, 9.0);
+    lanternLight.position.y = 0.2;
 
-    lanternGroup.add(lanternBase, lanternGlass, redLight);
+    lanternGroup.add(lanternBase, lanternGlass, lanternLight);
     root.add(lanternGroup);
 
     return root;
@@ -112,13 +114,15 @@ export class CampLaptop {
     modal.style.justifyContent = 'center';
     modal.style.backgroundColor = 'rgba(2, 6, 23, 0.85)';
     modal.style.backdropFilter = 'blur(10px)';
+    modal.style.cursor = 'default';
+    modal.style.pointerEvents = 'auto';
 
     modal.innerHTML = `
       <div class="camp-laptop-panel" style="width: 860px; max-width: 92vw; max-height: 85vh; background: #090d16; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.8);">
         <div style="padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div style="font-size: 17px; font-weight: 700; color: #f8fafc; letter-spacing: 0.03em;">營地野外終端機 · 共享星空相簿</div>
-            <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">此終端機即時同步所有觀星隊友拍攝的星空影像與星軌作品</div>
+            <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">此終端機即時同步所有觀星隊友拍攝的星空影像與星軌作品（點擊照片可放大全螢幕檢視）</div>
           </div>
           <button id="camp-laptop-close" style="background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 4px 8px;">&times;</button>
         </div>
@@ -133,13 +137,24 @@ export class CampLaptop {
     return modal;
   }
 
-  public isPlayerNear(playerPos: THREE.Vector3, threshold = 2.4): boolean {
+  private setupEvents() {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.isModalOpen) {
+        this.close();
+      }
+    });
+  }
+
+  public isPlayerNear(playerPos: THREE.Vector3, threshold = 2.8): boolean {
     return playerPos.distanceTo(this.tablePosition) < threshold;
   }
 
   public open() {
     this.isModalOpen = true;
     this.modalEl.style.display = 'flex';
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
     this.renderPhotoGrid();
   }
 
@@ -178,7 +193,7 @@ export class CampLaptop {
     }
 
     grid.innerHTML = '';
-    this.photos.forEach((photo) => {
+    this.photos.forEach((photo, idx) => {
       const card = document.createElement('div');
       card.style.background = '#0f172a';
       card.style.border = '1px solid rgba(255,255,255,0.08)';
@@ -186,19 +201,60 @@ export class CampLaptop {
       card.style.overflow = 'hidden';
       card.style.display = 'flex';
       card.style.flexDirection = 'column';
+      card.style.transition = 'all 0.2s ease';
 
       card.innerHTML = `
-        <img src="${photo.imageDataUrl}" style="width: 100%; aspect-ratio: 16/9; object-fit: cover; cursor: pointer; display: block;" />
+        <div class="camp-card-img-wrap" style="position: relative; width: 100%; aspect-ratio: 16/9; overflow: hidden; cursor: pointer;">
+          <img src="${photo.imageDataUrl}" style="width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.2s ease;" />
+          <div style="position: absolute; inset: 0; background: rgba(2, 6, 23, 0.3); opacity: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; transition: opacity 0.2s ease;" class="camp-hover-overlay">點擊放大檢視</div>
+        </div>
         <div style="padding: 12px; display: flex; flex-direction: column; gap: 4px; flex: 1;">
           <div style="font-size: 13px; font-weight: 700; color: #f8fafc;">${photo.targetName}</div>
           <div style="font-size: 11px; color: #38bdf8;">由「${photo.photographerName}」拍攝</div>
           <div style="font-size: 11px; color: #64748b;">曝光: ${photo.exposureSeconds.toFixed(1)}s · ${photo.locationName}</div>
           <div style="margin-top: auto; padding-top: 8px; display: flex; gap: 6px;">
-            <button class="camp-card-export-btn" style="flex: 1; padding: 4px 8px; font-size: 11px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; cursor: pointer;">匯出銘牌</button>
-            <button class="camp-card-raw-btn" style="padding: 4px 8px; font-size: 11px; background: rgba(255, 255, 255, 0.05); color: #94a3b8; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px; cursor: pointer;">原圖</button>
+            <button class="camp-card-zoom-btn" style="flex: 1; padding: 5px 8px; font-size: 11px; background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 4px; cursor: pointer; font-weight: 600;">放大</button>
+            <button class="camp-card-export-btn" style="flex: 1; padding: 5px 8px; font-size: 11px; background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.5); border-radius: 4px; cursor: pointer; font-weight: 600;">銘牌</button>
+            <button class="camp-card-raw-btn" style="padding: 5px 8px; font-size: 11px; background: rgba(255, 255, 255, 0.06); color: #94a3b8; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 4px; cursor: pointer;">原圖</button>
           </div>
         </div>
       `;
+
+      // Hover effect
+      const imgWrap = card.querySelector('.camp-card-img-wrap') as HTMLElement;
+      const overlay = card.querySelector('.camp-hover-overlay') as HTMLElement;
+      imgWrap.addEventListener('mouseenter', () => {
+        overlay.style.opacity = '1';
+      });
+      imgWrap.addEventListener('mouseleave', () => {
+        overlay.style.opacity = '0';
+      });
+
+      const openLightbox = () => {
+        const formattedPhotos = this.photos.map((p) => ({
+          id: p.id,
+          imageDataUrl: p.imageDataUrl,
+          targetName: p.targetName,
+          exposureSeconds: p.exposureSeconds,
+          quality: p.quality,
+          locationName: p.locationName,
+          timestamp: new Date(p.timestamp),
+          photographerName: p.photographerName,
+          telescopeLevel: p.telescopeLevel,
+          targetType: p.targetType,
+          weatherCondition: 'clear',
+          score: 95,
+          sellPrice: 0,
+          sold: false,
+          frameType: 'light',
+        }));
+        document.dispatchEvent(new CustomEvent('open-camp-lightbox', {
+          detail: { photos: formattedPhotos, index: idx }
+        }));
+      };
+
+      imgWrap.addEventListener('click', openLightbox);
+      card.querySelector('.camp-card-zoom-btn')?.addEventListener('click', openLightbox);
 
       card.querySelector('.camp-card-export-btn')?.addEventListener('click', () => {
         PhotoExporter.downloadExhibitionPlate({

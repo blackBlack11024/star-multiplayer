@@ -77,10 +77,14 @@ export class PhotoLightbox {
         };
         const details = this.overlay.querySelector('.lightbox-details') as HTMLElement;
         const timestamp = photo.timestamp instanceof Date ? photo.timestamp : new Date(photo.timestamp);
+        const authorRow = photo.photographerName
+            ? `<div class="lb-row"><span class="lb-label">拍攝作者</span><span style="font-weight:600; color:#38bdf8">${photo.photographerName}</span></div>`
+            : '';
         
         details.innerHTML = `
             <div class="lb-row"><span class="lb-label">拍攝天體</span><span style="font-weight:600">${photo.targetName}</span></div>
-            <div class="lb-row"><span class="lb-label">品質評級</span><span class="quality ${photo.quality}">${photo.quality}級 (${photo.score}分)</span></div>
+            ${authorRow}
+            <div class="lb-row"><span class="lb-label">品質評級</span><span class="quality ${photo.quality}">${photo.quality}級 (${photo.score || 95}分)</span></div>
             <div class="lb-row"><span class="lb-label">曝光時長</span><span>${photo.exposureSeconds} 秒</span></div>
             <div class="lb-row"><span class="lb-label">望遠鏡</span><span>第 ${photo.telescopeLevel || 1} 級</span></div>
             <div class="lb-row"><span class="lb-label">拍攝天氣</span><span>${weatherLabels[photo.weatherCondition] || photo.weatherCondition}</span></div>

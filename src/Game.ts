@@ -707,7 +707,7 @@ export class Game {
 
     // ---- UI & 3D Waypoints & Quest Tracker ----
     this.hud.update(state);
-    this.hud.updateWaypoints(this.camera, this.telescopeModel.getPosition(), this.studio.getPosition());
+    this.hud.updateWaypoints(this.camera, this.telescopeModel.getPosition(), this.studio.getPosition(), this.campLaptop.tablePosition);
     this.hud.updateQuestTracker(this.questManager.getNextQuest());
   }
 
@@ -807,6 +807,10 @@ export class Game {
         });
       const idx = photos.findIndex((p: any) => p.id === e.detail.photoId);
       this.photoLightbox.open(photos, Math.max(0, idx));
+    });
+
+    document.addEventListener('open-camp-lightbox', (e: any) => {
+      this.photoLightbox.open(e.detail.photos, e.detail.index);
     });
 
     // Photo capture event (Manual Start / Stop Exposure)

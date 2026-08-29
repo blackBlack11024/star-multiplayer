@@ -80,7 +80,7 @@ export class PlayerController {
       if (this.isAltHeld) return; // While holding Alt, clicks are for UI interaction
       if (this.isAnyModalActive()) return;
       const target = e.target as HTMLElement;
-      if (target && target.closest('.hud-panel, .studio-panel, button, input, select, .guide-badge, .money-badge, .weather-badge, .audio-badge, .story-box, .codex-panel, .finder-panel, .lightbox-content')) {
+      if (target && target.closest('.hud-panel, .studio-panel, button, input, select, .guide-badge, .money-badge, .weather-badge, .audio-badge, .story-box, .codex-panel, .finder-panel, .lightbox-content, .multiplayer-modal, .camp-laptop-modal, .multiplayer-panel, .camp-laptop-panel')) {
         return;
       }
       const mode = gameStore.getState().gameMode;
@@ -109,7 +109,9 @@ export class PlayerController {
       '.location-modal',
       '.time-reversal-panel',
       '.audio-modal',
-      '.story-modal'
+      '.story-modal',
+      '.multiplayer-modal',
+      '.camp-laptop-modal'
     ];
     for (const sel of modalSelectors) {
       const el = document.querySelector(sel) as HTMLElement | null;

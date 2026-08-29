@@ -444,6 +444,12 @@ html, body {
   color: #fef3c7;
 }
 
+.waypoint-marker.laptop {
+  border-color: #06b6d4;
+  color: #cffafe;
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+}
+
 .waypoint-marker .key-hint {
   background: rgba(255, 255, 255, 0.15);
   padding: 1px 5px;
