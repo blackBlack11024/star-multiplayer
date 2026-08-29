@@ -47,7 +47,8 @@ import { AvatarManager } from './multiplayer/AvatarManager';
 import { MultiplayerTelescopes } from './multiplayer/MultiplayerTelescopes';
 import { CampLaptop } from './multiplayer/CampLaptop';
 import { MultiplayerUI } from './multiplayer/MultiplayerUI';
-import { PacketType, CampPhotoSharePacket } from './multiplayer/NetworkProtocol';
+import { PacketType, CampPhotoSharePacket, TimeSyncPacket, RoomSyncRequestPacket } from './multiplayer/NetworkProtocol';
+import { LOCATIONS } from './data/locations';
 import { Headlamp } from './world/Headlamp';
 
 type ProgressCallback = (pct: number, text: string) => void;
@@ -115,6 +116,7 @@ export class Game {
   private planetStoreUpdateTimer = 0;
   private lastStarTrailNotifTime = 0;
   private lastNetTimeSyncTime = 0;
+  private hostTimeSyncTimer = 0;
 
   // GoTo auto-slew animation state
   private isGoToSlewing = false;
@@ -308,7 +310,7 @@ export class Game {
         rotY: this.telescopeModel.getRotationY(),
       });
 
-      // If host, also broadcast our deployed telescopes and current game time
+      // If host, also broadcast our deployed telescopes, current game time, location, and pause state
       if (this.networkManager.isHost) {
         this.multiplayerTelescopes.getAllTelescopes().forEach((t) => {
           this.networkManager.sendTo(peerId, {
@@ -327,6 +329,29 @@ export class Game {
           type: PacketType.TIME_SYNC,
           timeScale: state.timeScale,
           gameTimeMs: state.currentTime.getTime(),
+          locationId: state.currentLocation?.id,
+          isPaused: state.isTimePaused,
+          senderId: this.networkManager.localId,
+        });
+      } else {
+        // If guest, actively request room sync (time, location, sky) from host
+        this.networkManager.sendTo(peerId, {
+          type: PacketType.ROOM_SYNC_REQUEST,
+          requesterId: this.networkManager.localId,
+        });
+      }
+    });
+
+    this.networkManager.on<RoomSyncRequestPacket>(PacketType.ROOM_SYNC_REQUEST, (pkt, senderPeerId) => {
+      const state = gameStore.getState();
+      const targetPeer = senderPeerId || pkt.requesterId;
+      if (targetPeer) {
+        this.networkManager.sendTo(targetPeer, {
+          type: PacketType.TIME_SYNC,
+          timeScale: state.timeScale,
+          gameTimeMs: state.currentTime.getTime(),
+          locationId: state.currentLocation?.id,
+          isPaused: state.isTimePaused,
           senderId: this.networkManager.localId,
         });
       }
@@ -351,11 +376,38 @@ export class Game {
       this.avatarManager.showSpeechBubble(pkt.id, pkt.text);
     });
 
-    this.networkManager.on<any>(PacketType.TIME_SYNC, (pkt) => {
+    this.networkManager.on<TimeSyncPacket>(PacketType.TIME_SYNC, (pkt) => {
       if (pkt.senderId === this.networkManager.localId) return;
       const state = gameStore.getState();
-      state.setTimeScale(pkt.timeScale);
-      state.setTime(new Date(pkt.gameTimeMs));
+
+      // 1. Sync Observation Location (guarantees identical latitude & longitude for sky orientation)
+      if (pkt.locationId && state.currentLocation?.id !== pkt.locationId) {
+        const targetLoc = LOCATIONS.find((l) => l.id === pkt.locationId);
+        if (targetLoc) {
+          state.setLocation(targetLoc);
+          this.terrain.updateLocation(targetLoc);
+          this.hud.showNotification(`已同步觀星地點至「${targetLoc.name}」`, 'info');
+        }
+      }
+
+      // 2. Sync Time Pause
+      if (typeof pkt.isPaused === 'boolean' && state.isTimePaused !== pkt.isPaused) {
+        state.toggleTimePause();
+      }
+
+      // 3. Sync Time Scale
+      if (typeof pkt.timeScale === 'number' && state.timeScale !== pkt.timeScale) {
+        state.setTimeScale(pkt.timeScale);
+      }
+
+      // 4. Sync Exact Astronomical Game Time (Earth rotation angle / LST)
+      if (typeof pkt.gameTimeMs === 'number') {
+        const diff = Math.abs(state.currentTime.getTime() - pkt.gameTimeMs);
+        if (diff > 250) {
+          state.setTime(new Date(pkt.gameTimeMs));
+        }
+      }
+
       if (pkt.isStarTrailAccelerating) {
         const now = performance.now();
         if (now - this.lastStarTrailNotifTime > 12000) {
@@ -572,6 +624,22 @@ export class Game {
             laserMounted: Boolean(state.isLaserPointerMounted),
           });
         }
+
+        // Host periodic heartbeat (every 1.5s) to guarantee zero clock drift across room
+        if (this.networkManager.isHost) {
+          this.hostTimeSyncTimer += deltaTime;
+          if (this.hostTimeSyncTimer >= 1.5) {
+            this.hostTimeSyncTimer = 0;
+            this.networkManager.broadcast({
+              type: PacketType.TIME_SYNC,
+              timeScale: state.timeScale,
+              gameTimeMs: state.currentTime.getTime(),
+              locationId: state.currentLocation?.id,
+              isPaused: state.isTimePaused,
+              senderId: this.networkManager.localId,
+            });
+          }
+        }
       }
     }
 
@@ -763,17 +831,27 @@ export class Game {
       if (state.currentLocation?.id !== prevState.currentLocation?.id) {
         this.terrain.updateLocation(state.currentLocation);
       }
-      if (state.timeScale !== prevState.timeScale && this.networkManager && this.networkManager.isConnected()) {
-        const now = performance.now();
-        if (now - this.lastNetTimeSyncTime > 250) {
-          this.lastNetTimeSyncTime = now;
-          this.networkManager.broadcast({
-            type: PacketType.TIME_SYNC,
-            timeScale: state.timeScale,
-            gameTimeMs: state.currentTime.getTime(),
-            senderId: this.networkManager.localId,
-            isStarTrailAccelerating: Math.abs(state.timeScale) > 60,
-          });
+
+      if (this.networkManager && this.networkManager.isConnected()) {
+        const isTimeScaleChanged = state.timeScale !== prevState.timeScale;
+        const isPauseChanged = state.isTimePaused !== prevState.isTimePaused;
+        const isLocationChanged = state.currentLocation?.id !== prevState.currentLocation?.id;
+        const isTimeJumped = Math.abs(state.currentTime.getTime() - prevState.currentTime.getTime()) > 3000;
+
+        if (isTimeScaleChanged || isPauseChanged || isLocationChanged || isTimeJumped) {
+          const now = performance.now();
+          if (now - this.lastNetTimeSyncTime > 200) {
+            this.lastNetTimeSyncTime = now;
+            this.networkManager.broadcast({
+              type: PacketType.TIME_SYNC,
+              timeScale: state.timeScale,
+              gameTimeMs: state.currentTime.getTime(),
+              locationId: state.currentLocation?.id,
+              isPaused: state.isTimePaused,
+              senderId: this.networkManager.localId,
+              isStarTrailAccelerating: Math.abs(state.timeScale) > 60,
+            });
+          }
         }
       }
     });

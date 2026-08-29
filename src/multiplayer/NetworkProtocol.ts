@@ -8,6 +8,7 @@ export enum PacketType {
   PLAYER_UPDATE = 'PLAYER_UPDATE',
   CHAT_BUBBLE = 'CHAT_BUBBLE',
   TIME_SYNC = 'TIME_SYNC',
+  ROOM_SYNC_REQUEST = 'ROOM_SYNC_REQUEST',
   TELESCOPE_SPAWN = 'TELESCOPE_SPAWN',
   TELESCOPE_STATE = 'TELESCOPE_STATE',
   TELESCOPE_SEIZE = 'TELESCOPE_SEIZE',
@@ -56,6 +57,13 @@ export interface TimeSyncPacket {
   gameTimeMs: number;
   senderId: string;
   isStarTrailAccelerating?: boolean;
+  locationId?: string;
+  isPaused?: boolean;
+}
+
+export interface RoomSyncRequestPacket {
+  type: PacketType.ROOM_SYNC_REQUEST;
+  requesterId: string;
 }
 
 export interface TelescopeSpawnPacket {
@@ -109,4 +117,5 @@ export type NetworkPacket =
   | TelescopeSpawnPacket
   | TelescopeStatePacket
   | TelescopeSeizePacket
-  | CampPhotoSharePacket;
+  | CampPhotoSharePacket
+  | RoomSyncRequestPacket;
