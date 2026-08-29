@@ -4,31 +4,41 @@ export type HeadlampMode = 'off' | 'red' | 'white';
 
 export class Headlamp {
   private camera: THREE.Camera;
+  private scene: THREE.Scene;
   private spotLight: THREE.SpotLight;
   private spotTarget: THREE.Object3D;
-  private pointLight: THREE.PointLight;
+  private groundLight: THREE.PointLight;
   private currentMode: HeadlampMode = 'red';
 
-  constructor(camera: THREE.Camera) {
+  constructor(camera: THREE.Camera, scene: THREE.Scene) {
     this.camera = camera;
+    this.scene = scene;
 
-    // Spot target directly in front of camera
+    // Spot target added to scene so its world transform is always accurate
     this.spotTarget = new THREE.Object3D();
-    this.spotTarget.position.set(0, 0, -8);
-    this.camera.add(this.spotTarget);
+    this.scene.add(this.spotTarget);
 
-    // Forward cone spotlight
-    this.spotLight = new THREE.SpotLight(0xff2222, 2.4, 18, Math.PI / 4, 0.5, 1.2);
+    // Forward beam spotlight (60-degree cone, soft edge, linear falloff)
+    this.spotLight = new THREE.SpotLight(0xff2222, 6.5, 35, Math.PI / 3, 0.45, 1.0);
     this.spotLight.position.set(0, 0, 0);
     this.spotLight.target = this.spotTarget;
     this.camera.add(this.spotLight);
 
-    // Soft point light for ambient fill around the player's immediate feet
-    this.pointLight = new THREE.PointLight(0xff2222, 0.6, 5.0);
-    this.pointLight.position.set(0, -0.3, 0);
-    this.camera.add(this.pointLight);
+    // Dedicated ground illumination floodlight (positioned right in front of chest/waist)
+    // Ensures the terrain, grass, and ground under and around the player are brightly lit
+    this.groundLight = new THREE.PointLight(0xff2222, 4.5, 20.0, 1.0);
+    this.groundLight.position.set(0, -0.6, -0.6);
+    this.camera.add(this.groundLight);
 
     this.applyMode(this.currentMode);
+  }
+
+  public update() {
+    if (this.currentMode === 'off') return;
+    // Aim the spotlight forward and slightly downward towards the ground path in front of player
+    const forward = new THREE.Vector3(0, -0.22, -1).normalize();
+    forward.applyQuaternion(this.camera.quaternion);
+    this.spotTarget.position.copy(this.camera.position).addScaledVector(forward, 12);
   }
 
   public getMode(): HeadlampMode {
@@ -54,30 +64,30 @@ export class Headlamp {
   private applyMode(mode: HeadlampMode) {
     if (mode === 'off') {
       this.spotLight.visible = false;
-      this.pointLight.visible = false;
+      this.groundLight.visible = false;
     } else if (mode === 'red') {
       this.spotLight.visible = true;
       this.spotLight.color.setHex(0xff2222);
-      this.spotLight.intensity = 2.5;
+      this.spotLight.intensity = 6.0;
 
-      this.pointLight.visible = true;
-      this.pointLight.color.setHex(0xff2222);
-      this.pointLight.intensity = 0.6;
+      this.groundLight.visible = true;
+      this.groundLight.color.setHex(0xff2222);
+      this.groundLight.intensity = 4.5;
     } else if (mode === 'white') {
       this.spotLight.visible = true;
       this.spotLight.color.setHex(0xfff5ea);
-      this.spotLight.intensity = 3.2;
+      this.spotLight.intensity = 7.5;
 
-      this.pointLight.visible = true;
-      this.pointLight.color.setHex(0xfff5ea);
-      this.pointLight.intensity = 0.8;
+      this.groundLight.visible = true;
+      this.groundLight.color.setHex(0xfff5ea);
+      this.groundLight.intensity = 5.5;
     }
   }
 
   public setVisible(visible: boolean) {
     if (!visible) {
       this.spotLight.visible = false;
-      this.pointLight.visible = false;
+      this.groundLight.visible = false;
     } else {
       this.applyMode(this.currentMode);
     }
@@ -85,7 +95,7 @@ export class Headlamp {
 
   public dispose() {
     this.camera.remove(this.spotLight);
-    this.camera.remove(this.spotTarget);
-    this.camera.remove(this.pointLight);
+    this.camera.remove(this.groundLight);
+    this.scene.remove(this.spotTarget);
   }
 }

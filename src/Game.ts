@@ -242,7 +242,7 @@ export class Game {
     this.postProcessing = new PostProcessing(this.renderer, this.scene, this.camera);
     this.starTrailCamera = new StarTrailCamera(this.renderer, window.innerWidth, window.innerHeight);
     this.playerController.setStarTrailCamera(this.starTrailCamera);
-    this.headlamp = new Headlamp(this.camera);
+    this.headlamp = new Headlamp(this.camera, this.scene);
 
     // ---- Game systems ----
     progress(0.8, '正在載入遊戲與任務系統...');
@@ -515,6 +515,7 @@ export class Game {
     // ---- Player controller & Binoculars smooth zoom ----
     this.playerController.update(deltaTime);
     this.binocularsMode.update(deltaTime);
+    this.headlamp.update();
 
     // ---- Space Station, Meteors & Laser Pointer ----
     this.spaceStation.update(deltaTime, state.currentFov, loc.latitude, this.sunElevation, gameTime);
