@@ -213,6 +213,14 @@ export class LaserPointer {
     }
   }
 
+  public isActive(): boolean {
+    return this.isPointerActive;
+  }
+
+  public getTargetName(): string | undefined {
+    return this.lastIdentifiedTarget?.name;
+  }
+
   public setVisibleForPhoto(visible: boolean) {
     if (!visible) {
       this.handheldBeamLine.visible = false;

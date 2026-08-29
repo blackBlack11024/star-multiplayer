@@ -42,6 +42,12 @@ import { getTelescopeConfig } from './data/telescopes';
 import { LaserPointer } from './astronomy/LaserPointer';
 import { SpaceStation } from './astronomy/SpaceStation';
 import { MeteorSystem } from './environment/MeteorSystem';
+import { NetworkManager } from './multiplayer/NetworkManager';
+import { AvatarManager } from './multiplayer/AvatarManager';
+import { MultiplayerTelescopes } from './multiplayer/MultiplayerTelescopes';
+import { CampLaptop } from './multiplayer/CampLaptop';
+import { MultiplayerUI } from './multiplayer/MultiplayerUI';
+import { PacketType, CampPhotoSharePacket } from './multiplayer/NetworkProtocol';
 
 type ProgressCallback = (pct: number, text: string) => void;
 
@@ -94,6 +100,16 @@ export class Game {
   private storyDialogue!: StoryDialogue;
   private menuSystem!: MenuSystem;
   private finderUI!: FinderUI;
+
+  // ---- Multiplayer ----
+  private networkManager!: NetworkManager;
+  private avatarManager!: AvatarManager;
+  private multiplayerTelescopes!: MultiplayerTelescopes;
+  private campLaptop!: CampLaptop;
+  private multiplayerUI!: MultiplayerUI;
+  private netUpdateTimer: number = 0;
+  private activeOperatingTelescopeId: string | null = null;
+  private isSpectatingTelescope: boolean = false;
 
   // GoTo auto-slew animation state
   private isGoToSlewing = false;
@@ -242,11 +258,125 @@ export class Game {
     this.menuSystem = new MenuSystem();
     this.finderUI = new FinderUI();
 
+    // ---- Multiplayer Subsystems ----
+    progress(0.9, '正在初始化多人連線模組...');
+    this.networkManager = new NetworkManager();
+    this.avatarManager = new AvatarManager(this.scene, this.camera);
+    this.multiplayerTelescopes = new MultiplayerTelescopes(this.scene);
+    this.campLaptop = new CampLaptop(this.scene);
+    this.multiplayerUI = new MultiplayerUI(this.networkManager);
+    this.setupMultiplayerNetworking();
+
     // ---- Wire up interactions ----
     this.setupInteractions();
     this.savedTelescopeFov = gameStore.getState().currentFov || 20.0;
 
     progress(1.0, '初始化完成！');
+  }
+
+  private setupMultiplayerNetworking(): void {
+    this.networkManager.onPeerConnect((peerId) => {
+      // Send our own player info to new peers
+      const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+      euler.setFromQuaternion(this.camera.quaternion);
+      this.networkManager.broadcast({
+        type: PacketType.PLAYER_JOIN,
+        id: this.networkManager.localId,
+        name: this.networkManager.localName,
+        color: this.networkManager.localColor,
+        hatType: this.networkManager.localHatType,
+        pos: [this.camera.position.x, this.camera.position.y - 1.7, this.camera.position.z],
+        telescopeLevel: gameStore.getState().telescopeLevel || 1,
+      });
+
+      // If host, also broadcast our deployed telescopes and current game time
+      if (this.networkManager.isHost) {
+        this.multiplayerTelescopes.getAllTelescopes().forEach((t) => {
+          this.networkManager.sendTo(peerId, {
+            type: PacketType.TELESCOPE_SPAWN,
+            telescopeId: t.id,
+            ownerId: t.ownerId,
+            ownerName: t.ownerName,
+            level: t.level,
+            pos: [t.group.position.x, t.group.position.y, t.group.position.z],
+            rotY: t.group.rotation.y,
+          });
+        });
+
+        const state = gameStore.getState();
+        this.networkManager.sendTo(peerId, {
+          type: PacketType.TIME_SYNC,
+          timeScale: state.timeScale,
+          gameTimeMs: state.currentTime.getTime(),
+          senderId: this.networkManager.localId,
+        });
+      }
+    });
+
+    this.networkManager.on<any>(PacketType.PLAYER_JOIN, (pkt) => {
+      if (pkt.id === this.networkManager.localId) return;
+      this.avatarManager.addOrUpdatePlayer(pkt);
+      this.hud.showNotification(`「${pkt.name}」加入了觀星小隊！`, 'info');
+    });
+
+    this.networkManager.on<any>(PacketType.PLAYER_UPDATE, (pkt) => {
+      if (pkt.id === this.networkManager.localId) return;
+      this.avatarManager.updatePlayerState(pkt);
+    });
+
+    this.networkManager.on<any>(PacketType.PLAYER_LEAVE, (pkt) => {
+      this.avatarManager.removePlayer(pkt.id);
+    });
+
+    this.networkManager.on<any>(PacketType.CHAT_BUBBLE, (pkt) => {
+      this.avatarManager.showSpeechBubble(pkt.id, pkt.text);
+    });
+
+    this.networkManager.on<any>(PacketType.TIME_SYNC, (pkt) => {
+      if (pkt.senderId === this.networkManager.localId) return;
+      const state = gameStore.getState();
+      state.setTimeScale(pkt.timeScale);
+      state.setTime(new Date(pkt.gameTimeMs));
+      if (pkt.isStarTrailAccelerating) {
+        this.hud.showNotification('隊友正在長曝光旋轉夜空，天球時間飛速流動中', 'info');
+      }
+    });
+
+    this.networkManager.on<any>(PacketType.TELESCOPE_SPAWN, (pkt) => {
+      this.multiplayerTelescopes.handleTelescopeSpawn(pkt);
+    });
+
+    this.networkManager.on<any>(PacketType.TELESCOPE_STATE, (pkt) => {
+      this.multiplayerTelescopes.handleTelescopeState(pkt);
+      if (this.isSpectatingTelescope && this.activeOperatingTelescopeId === pkt.telescopeId) {
+        gameStore.getState().setTelescopePointing(pkt.ra, pkt.dec);
+        gameStore.getState().setFov(pkt.fov);
+      }
+    });
+
+    this.networkManager.on<any>(PacketType.TELESCOPE_SEIZE, (pkt) => {
+      if (pkt.previousOperatorId === this.networkManager.localId && !this.isSpectatingTelescope) {
+        gameStore.getState().setGameMode(GameMode.Walk);
+        this.activeOperatingTelescopeId = null;
+        this.hud.showNotification('望遠鏡已被隊友接管操作，已返回漫步模式', 'info');
+      }
+    });
+
+    this.networkManager.on<any>(PacketType.CAMP_PHOTO_SHARE, (pkt) => {
+      this.campLaptop.addSharedPhoto(pkt);
+      this.hud.showNotification(`隊友「${pkt.photographerName}」拍下了「${pkt.targetName}」！已無線傳送至營地終端機`, 'success');
+    });
+
+    this.multiplayerUI.onSendChat((text) => {
+      this.avatarManager.showSpeechBubble(this.networkManager.localId, text);
+      if (this.networkManager.isConnected()) {
+        this.networkManager.broadcast({
+          type: PacketType.CHAT_BUBBLE,
+          id: this.networkManager.localId,
+          text,
+        });
+      }
+    });
   }
 
   /** Start the game loop. */
@@ -375,6 +505,46 @@ export class Game {
     this.meteorSystem.update(deltaTime, this.camera, this.sunElevation);
     this.laserPointer.update();
 
+    // ---- Multiplayer Avatars & State Synchronization ----
+    this.avatarManager.update(deltaTime);
+
+    if (this.networkManager && this.networkManager.isConnected()) {
+      this.netUpdateTimer += deltaTime;
+      if (this.netUpdateTimer >= 0.05) {
+        this.netUpdateTimer = 0;
+        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        euler.setFromQuaternion(this.camera.quaternion);
+        const posture = this.playerController.getPosture();
+        const isLaserActive = this.laserPointer?.isActive() || false;
+        const forward = new THREE.Vector3();
+        this.camera.getWorldDirection(forward);
+
+        this.networkManager.broadcast({
+          type: PacketType.PLAYER_UPDATE,
+          id: this.networkManager.localId,
+          pos: [this.camera.position.x, this.camera.position.y - 1.7, this.camera.position.z],
+          yaw: euler.y,
+          pitch: euler.x,
+          posture,
+          laserActive: isLaserActive,
+          laserDir: isLaserActive ? [forward.x, forward.y, forward.z] : undefined,
+          laserTarget: isLaserActive ? this.laserPointer?.getTargetName() : undefined,
+        });
+
+        if (this.activeOperatingTelescopeId && !this.isSpectatingTelescope) {
+          this.networkManager.broadcast({
+            type: PacketType.TELESCOPE_STATE,
+            telescopeId: this.activeOperatingTelescopeId,
+            ra: state.telescopeRa,
+            dec: state.telescopeDec,
+            fov: state.currentFov,
+            isLocked: Boolean(this.multiplayerTelescopes.getTelescope(this.activeOperatingTelescopeId)?.isLocked),
+            operatorId: this.networkManager.localId,
+          });
+        }
+      }
+    }
+
     // ---- GoTo Auto-Slewing Interpolation ----
     if (this.isGoToSlewing) {
       const elapsed = performance.now() - this.goToStartTime;
@@ -488,12 +658,33 @@ export class Game {
 
     // ---- Interaction prompts ----
     if (state.gameMode === GameMode.Walk) {
-      if (this.telescopeModel.isPlayerNear(this.camera.position)) {
-        this.hud.showInteractPrompt('按 E 使用望遠鏡');
+      const closestTel = this.multiplayerTelescopes.getClosestTelescope(this.camera.position);
+      if (this.campLaptop.isPlayerNear(this.camera.position)) {
+        this.hud.showInteractPrompt('按 E 開啟營地共享相簿');
+      } else if (closestTel) {
+        if (closestTel.operatorId && closestTel.operatorId !== this.networkManager.localId) {
+          if (closestTel.isLocked) {
+            this.hud.showInteractPrompt(`按 E 共享「${closestTel.ownerName}」目鏡視野 (已鎖定)`);
+          } else {
+            this.hud.showInteractPrompt(`按 E 接管「${closestTel.ownerName}」望遠鏡操作 (未鎖定)`);
+          }
+        } else {
+          this.hud.showInteractPrompt(`按 E 使用「${closestTel.ownerName}」的望遠鏡 (按 V 鍵可隨處架設)`);
+        }
+      } else if (this.telescopeModel.isPlayerNear(this.camera.position)) {
+        this.hud.showInteractPrompt('按 E 使用望遠鏡 (按 V 鍵可在任意空地架設)');
       } else if (this.studio.isPlayerNear(this.camera.position)) {
         this.hud.showInteractPrompt('按 F 進入工作室');
       } else {
         this.hud.hideInteractPrompt();
+      }
+    } else if (state.gameMode === GameMode.Telescope) {
+      if (this.isSpectatingTelescope) {
+        this.hud.showInteractPrompt('目前為共享目鏡觀看模式 (不可調整視角，按 Esc 退出)');
+      } else {
+        const tel = this.activeOperatingTelescopeId ? this.multiplayerTelescopes.getTelescope(this.activeOperatingTelescopeId) : null;
+        const lockStr = tel?.isLocked ? '已鎖定' : '未鎖定';
+        this.hud.showInteractPrompt(`[L 鍵] 鎖定/解鎖視野 (${lockStr}) · [Space/E] 拍攝 · [Esc] 退出`);
       }
     } else {
       this.hud.hideInteractPrompt();
@@ -541,6 +732,15 @@ export class Game {
       }
       if (state.currentLocation?.id !== prevState.currentLocation?.id) {
         this.terrain.updateLocation(state.currentLocation);
+      }
+      if (state.timeScale !== prevState.timeScale && this.networkManager && this.networkManager.isConnected()) {
+        this.networkManager.broadcast({
+          type: PacketType.TIME_SYNC,
+          timeScale: state.timeScale,
+          gameTimeMs: state.currentTime.getTime(),
+          senderId: this.networkManager.localId,
+          isStarTrailAccelerating: Math.abs(state.timeScale) > 60,
+        });
       }
     });
 
@@ -627,6 +827,154 @@ export class Game {
       const { ra, dec, targetName } = e.detail;
       this.startGoToSlew(ra, dec, targetName);
     });
+
+    // Deploy personal telescope at current position
+    document.addEventListener('deploy-telescope', () => {
+      const forward = new THREE.Vector3();
+      this.camera.getWorldDirection(forward);
+      forward.y = 0;
+      forward.normalize();
+      const spawnPos = this.camera.position.clone().addScaledVector(forward, 1.8);
+      spawnPos.y = 0;
+      const telescopeId = `tel_${this.networkManager.localId || 'local'}`;
+      const level = gameStore.getState().telescopeLevel || 1;
+      const rotY = Math.atan2(forward.x, forward.z);
+
+      this.multiplayerTelescopes.handleTelescopeSpawn({
+        type: PacketType.TELESCOPE_SPAWN,
+        telescopeId,
+        ownerId: this.networkManager.localId,
+        ownerName: this.networkManager.localName,
+        level,
+        pos: [spawnPos.x, spawnPos.y, spawnPos.z],
+        rotY,
+      });
+
+      if (this.networkManager.isConnected()) {
+        this.networkManager.broadcast({
+          type: PacketType.TELESCOPE_SPAWN,
+          telescopeId,
+          ownerId: this.networkManager.localId,
+          ownerName: this.networkManager.localName,
+          level,
+          pos: [spawnPos.x, spawnPos.y, spawnPos.z],
+          rotY,
+        });
+      }
+      this.hud.showNotification('已在當前位置成功架設您的專屬望遠鏡！(靠近按 E 可觀測)', 'success');
+    });
+
+    // Multiplayer chat input
+    document.addEventListener('open-multiplayer-chat', () => {
+      this.multiplayerUI.openChat();
+    });
+
+    // Toggle telescope lock status
+    document.addEventListener('toggle-telescope-lock', () => {
+      if (this.activeOperatingTelescopeId) {
+        const tel = this.multiplayerTelescopes.getTelescope(this.activeOperatingTelescopeId);
+        if (tel) {
+          tel.isLocked = !tel.isLocked;
+          this.hud.showNotification(tel.isLocked ? '望遠鏡視角：已鎖定 (隊友只能借看目鏡)' : '望遠鏡視角：未鎖定 (隊友可接管操作)', 'info');
+          if (this.networkManager.isConnected()) {
+            this.networkManager.broadcast({
+              type: PacketType.TELESCOPE_STATE,
+              telescopeId: tel.id,
+              ra: tel.ra,
+              dec: tel.dec,
+              fov: tel.fov,
+              isLocked: tel.isLocked,
+              operatorId: this.networkManager.localId,
+            });
+          }
+        }
+      } else {
+        gameStore.getState().toggleTelescopeLock();
+        const isLocked = gameStore.getState().isTelescopeLocked;
+        this.hud.showNotification(isLocked ? '望遠鏡視角：已鎖定' : '望遠鏡視角：未鎖定', 'info');
+      }
+    });
+
+    // Player interact E key
+    document.addEventListener('player-interact-e', () => {
+      const state = gameStore.getState();
+      if (state.gameMode !== GameMode.Walk) return;
+
+      if (this.campLaptop.isPlayerNear(this.camera.position)) {
+        this.campLaptop.toggle();
+        return;
+      }
+
+      const closestTel = this.multiplayerTelescopes.getClosestTelescope(this.camera.position);
+      if (closestTel) {
+        if (closestTel.operatorId && closestTel.operatorId !== this.networkManager.localId) {
+          if (closestTel.isLocked) {
+            // Spectate mode
+            this.isSpectatingTelescope = true;
+            this.activeOperatingTelescopeId = closestTel.id;
+            gameStore.getState().setTelescopePointing(closestTel.ra, closestTel.dec);
+            gameStore.getState().setFov(closestTel.fov);
+            gameStore.getState().setGameMode(GameMode.Telescope);
+            this.hud.showNotification(`正在共享「${closestTel.ownerName}」的目鏡視野 (視角已鎖定)`, 'info');
+            return;
+          } else {
+            // Seize control!
+            this.isSpectatingTelescope = false;
+            this.activeOperatingTelescopeId = closestTel.id;
+            const prevOp = closestTel.operatorId;
+            closestTel.operatorId = this.networkManager.localId;
+            if (this.networkManager.isConnected()) {
+              this.networkManager.broadcast({
+                type: PacketType.TELESCOPE_SEIZE,
+                telescopeId: closestTel.id,
+                newOperatorId: this.networkManager.localId,
+                previousOperatorId: prevOp,
+              });
+            }
+            gameStore.getState().setGameMode(GameMode.Telescope);
+            this.hud.showNotification(`已接管「${closestTel.ownerName}」的望遠鏡操作權`, 'success');
+            return;
+          }
+        } else {
+          // Free telescope
+          this.isSpectatingTelescope = false;
+          this.activeOperatingTelescopeId = closestTel.id;
+          closestTel.operatorId = this.networkManager.localId;
+          gameStore.getState().setGameMode(GameMode.Telescope);
+          return;
+        }
+      }
+
+      // Fallback: near default site telescope
+      if (this.telescopeModel.isPlayerNear(this.camera.position)) {
+        this.isSpectatingTelescope = false;
+        this.activeOperatingTelescopeId = null;
+        gameStore.getState().setGameMode(GameMode.Telescope);
+      }
+    });
+
+    // Auto broadcast photos to Camp Laptop
+    document.addEventListener('photo-captured', (e: any) => {
+      const photo = e.detail?.photo;
+      if (!photo) return;
+      const sharePkt: CampPhotoSharePacket = {
+        type: PacketType.CAMP_PHOTO_SHARE,
+        id: photo.id,
+        photographerName: this.networkManager.localName,
+        targetName: photo.targetName,
+        targetType: photo.targetType || 'special',
+        exposureSeconds: photo.exposureSeconds,
+        quality: photo.quality,
+        timestamp: new Date().toISOString(),
+        imageDataUrl: photo.imageDataUrl,
+        locationName: gameStore.getState().currentLocation?.name || '合歡山',
+        telescopeLevel: photo.telescopeLevel || 1,
+      };
+      this.campLaptop.addSharedPhoto(sharePkt);
+      if (this.networkManager.isConnected()) {
+        this.networkManager.broadcast(sharePkt);
+      }
+    });
   }
 
   /** Slew telescope smoothly to target coordinates with motor sound */
@@ -679,6 +1027,26 @@ export class Game {
       this.terrain.setVisible(true);
       this.studio.setVisible(true);
       this.telescopeHUD.hide();
+
+      if (this.activeOperatingTelescopeId) {
+        const tel = this.multiplayerTelescopes.getTelescope(this.activeOperatingTelescopeId);
+        if (tel && tel.operatorId === this.networkManager.localId) {
+          tel.operatorId = null;
+          if (this.networkManager.isConnected()) {
+            this.networkManager.broadcast({
+              type: PacketType.TELESCOPE_STATE,
+              telescopeId: tel.id,
+              ra: tel.ra,
+              dec: tel.dec,
+              fov: tel.fov,
+              isLocked: tel.isLocked,
+              operatorId: null,
+            });
+          }
+        }
+        this.activeOperatingTelescopeId = null;
+        this.isSpectatingTelescope = false;
+      }
     }
 
     if (to === GameMode.Studio) {
@@ -700,8 +1068,8 @@ export class Game {
 
     const hasMeteor = this.meteorSystem.wasMeteorCaptured();
     const targetPayload = identified
-      ? { ...identified, difficulty: (identified as any).difficulty || 1, hasMeteor }
-      : { name: targetName, type: targetType, difficulty: 1, hasMeteor };
+      ? { id: (identified as any).id || targetName, name: identified.name, type: identified.type, hasMeteor }
+      : { id: 'star_field', name: '未知星野', type: 'star_field', hasMeteor };
 
     // Capture and score the photo with true accumulated data URL and drift metrics
     this.prepareSceneForPhoto(true);
@@ -736,11 +1104,13 @@ export class Game {
       this.constellations.setVisible(false);
       this.laserPointer.setVisibleForPhoto(false);
       this.telescopeModel.setMountedLaserVisible(false);
+      this.avatarManager.hideLasersForPhoto(true);
     } else {
       if (this.wasConstellationsVisibleBeforePhoto && gameStore.getState().showConstellations) {
         this.constellations.setVisible(true);
       }
       this.telescopeModel.setMountedLaserVisible(gameStore.getState().isLaserPointerMounted);
+      this.avatarManager.hideLasersForPhoto(false);
     }
   }
 
@@ -760,6 +1130,11 @@ export class Game {
   dispose(): void {
     this.isRunning = false;
     cancelAnimationFrame(this.animationFrameId);
+    this.avatarManager.dispose();
+    this.multiplayerTelescopes.dispose();
+    this.campLaptop.dispose();
+    this.multiplayerUI.dispose();
+    this.networkManager.disconnect();
     this.starField.dispose();
     this.deepSkyObjects.dispose();
     this.planetarySystem.dispose();

@@ -217,9 +217,15 @@ export class PlayerController {
         case 'KeyD': this.moveRight = true; break;
         case 'ShiftLeft':
         case 'ShiftRight': this.isSprinting = true; break;
+        case 'KeyV':
+          document.dispatchEvent(new CustomEvent('deploy-telescope'));
+          break;
+        case 'Enter':
+          document.dispatchEvent(new CustomEvent('open-multiplayer-chat'));
+          break;
         case 'KeyE':
           if (this.isLyingDown) this.toggleLieDown();
-          state.setGameMode(GameMode.Telescope);
+          document.dispatchEvent(new CustomEvent('player-interact-e'));
           break;
         case 'KeyF':
           if (this.isLyingDown) this.toggleLieDown();
@@ -260,7 +266,7 @@ export class PlayerController {
         }
         case 'KeyQ':
         case 'KeyL': {
-          state.toggleTelescopeLock();
+          document.dispatchEvent(new CustomEvent('toggle-telescope-lock'));
           return;
         }
         case 'ArrowUp':
@@ -506,6 +512,17 @@ export class PlayerController {
       this.controls.moveRight(-this.velocity.x * deltaTime);
       this.controls.moveForward(-this.velocity.z * deltaTime);
     }
+  }
+
+  public getPosture(): 'stand' | 'walk' | 'run' | 'lie_down' | 'in_telescope' {
+    const state = gameStore.getState();
+    if (state.gameMode === GameMode.Telescope) return 'in_telescope';
+    if (this.isLyingDown) return 'lie_down';
+    const isMoving = this.moveForward || this.moveBackward || this.moveLeft || this.moveRight;
+    if (isMoving) {
+      return this.isSprinting ? 'run' : 'walk';
+    }
+    return 'stand';
   }
 
   public dispose() {
