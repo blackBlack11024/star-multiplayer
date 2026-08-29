@@ -9,6 +9,7 @@ export interface DeployedTelescope {
   group: THREE.Group;
   tubeMesh: THREE.Mesh;
   mountMesh: THREE.Group;
+  laserGroup: THREE.Group;
   ra: number;
   dec: number;
   fov: number;
@@ -21,13 +22,18 @@ export class MultiplayerTelescopes {
   private telescopes: Map<string, DeployedTelescope> = new Map();
   public myTelescopeId: string | null = null;
   public spectatingTelescopeId: string | null = null;
+  public myOwnerId: string | null = null;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
+  public setMyOwnerId(id: string) {
+    this.myOwnerId = id;
+  }
+
   /** Build 3D telescope mesh matching optical tier */
-  private createTelescopeMesh(level: number): { group: THREE.Group; tubeMesh: THREE.Mesh; mountMesh: THREE.Group } {
+  private createTelescopeMesh(level: number): { group: THREE.Group; tubeMesh: THREE.Mesh; mountMesh: THREE.Group; laserGroup: THREE.Group } {
     const group = new THREE.Group();
 
     // Metallic tripod legs
@@ -76,12 +82,50 @@ export class MultiplayerTelescopes {
     eyepiece.position.set(0, tubeRadius + 0.05, -tubeLength * 0.35);
     mountMesh.add(eyepiece);
 
+    // Mounted Laser Pointer on remote telescope
+    const laserOffset = new THREE.Vector3(-tubeRadius - 0.03, tubeRadius + 0.04, tubeLength * 0.25);
+    const laserGroup = new THREE.Group();
+    
+    // Laser cylinder body
+    const laserBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.015, 0.015, 0.22, 12),
+      new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 })
+    );
+    laserBody.rotation.x = Math.PI / 2;
+    laserBody.position.copy(laserOffset);
+    laserGroup.add(laserBody);
+
+    // Laser Beam Line
+    const beamGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(laserOffset.x, laserOffset.y, laserOffset.z + 0.1),
+      new THREE.Vector3(laserOffset.x, laserOffset.y, 2500)
+    ]);
+    const beamMat = new THREE.LineBasicMaterial({
+      color: 0x34d399,
+      linewidth: 3,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const laserBeam = new THREE.Line(beamGeo, beamMat);
+    laserBeam.frustumCulled = false;
+    laserGroup.add(laserBeam);
+
+    laserGroup.visible = false;
+    mountMesh.add(laserGroup);
+
     group.add(mountMesh);
-    return { group, tubeMesh, mountMesh };
+    return { group, tubeMesh, mountMesh, laserGroup };
   }
 
   /** Spawn or update a deployed telescope in the world */
   public handleTelescopeSpawn(data: TelescopeSpawnPacket) {
+    // Local player's telescope is handled by this.telescopeModel
+    if (this.myOwnerId && data.ownerId === this.myOwnerId) {
+      return;
+    }
+
     if (this.telescopes.has(data.telescopeId)) {
       const existing = this.telescopes.get(data.telescopeId)!;
       existing.group.position.set(data.pos[0], data.pos[1], data.pos[2]);
@@ -89,7 +133,7 @@ export class MultiplayerTelescopes {
       return;
     }
 
-    const { group, tubeMesh, mountMesh } = this.createTelescopeMesh(data.level);
+    const { group, tubeMesh, mountMesh, laserGroup } = this.createTelescopeMesh(data.level);
     group.position.set(data.pos[0], data.pos[1], data.pos[2]);
     group.rotation.y = data.rotY;
     this.scene.add(group);
@@ -102,6 +146,7 @@ export class MultiplayerTelescopes {
       group,
       tubeMesh,
       mountMesh,
+      laserGroup,
       ra: 0,
       dec: 0,
       fov: 45,
@@ -121,11 +166,23 @@ export class MultiplayerTelescopes {
     t.isLocked = data.isLocked;
     t.operatorId = data.operatorId;
 
+    if (data.laserMounted !== undefined) {
+      t.laserGroup.visible = data.laserMounted;
+    }
+
     // Slew optical tube to match RA / Dec
     const decRad = THREE.MathUtils.degToRad(data.dec);
     const raRad = THREE.MathUtils.degToRad(data.ra * 15);
     t.mountMesh.rotation.x = -decRad;
     t.mountMesh.rotation.y = raRad;
+  }
+
+  public hideLasersForPhoto(hide: boolean) {
+    this.telescopes.forEach((t) => {
+      if (hide) {
+        t.laserGroup.visible = false;
+      }
+    });
   }
 
   /** Find closest telescope to player position */

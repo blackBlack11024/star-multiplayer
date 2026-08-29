@@ -260,6 +260,17 @@ export class TelescopeModel {
     return this.group.position.clone();
   }
 
+  public setPosition(pos: THREE.Vector3, rotY?: number) {
+    this.group.position.copy(pos);
+    if (rotY !== undefined) {
+      this.group.rotation.y = rotY;
+    }
+  }
+
+  public getRotationY(): number {
+    return this.group.rotation.y;
+  }
+
   public getTubeWorldPosition(): THREE.Vector3 {
     const pos = new THREE.Vector3(0, 0, 0.52);
     this.tubeGroup.localToWorld(pos);

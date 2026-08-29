@@ -6,7 +6,6 @@ export class MultiplayerUI {
   private modalEl: HTMLElement;
   private chatBarEl: HTMLElement;
   private chatInputEl: HTMLInputElement;
-  private statusBtnEl: HTMLElement;
   private isModalOpen = false;
   public isChatOpen = false;
 
@@ -14,7 +13,6 @@ export class MultiplayerUI {
 
   constructor(network: NetworkManager) {
     this.network = network;
-    this.statusBtnEl = this.createStatusButton();
     this.modalEl = this.createModalDOM();
     const chatDOM = this.createChatBarDOM();
     this.chatBarEl = chatDOM.container;
@@ -26,30 +24,6 @@ export class MultiplayerUI {
 
   public onSendChat(cb: (text: string) => void) {
     this.onSendChatCallback = cb;
-  }
-
-  private createStatusButton(): HTMLElement {
-    const btn = document.createElement('button');
-    btn.className = 'hud-multiplayer-btn';
-    btn.textContent = '多人連線';
-    btn.style.position = 'fixed';
-    btn.style.top = '16px';
-    btn.style.right = '280px';
-    btn.style.zIndex = '110';
-    btn.style.background = 'rgba(15, 23, 42, 0.75)';
-    btn.style.color = '#38bdf8';
-    btn.style.border = '1px solid rgba(56, 189, 248, 0.4)';
-    btn.style.borderRadius = '8px';
-    btn.style.padding = '6px 14px';
-    btn.style.fontSize = '12px';
-    btn.style.fontWeight = '600';
-    btn.style.cursor = 'pointer';
-    btn.style.backdropFilter = 'blur(8px)';
-    btn.style.transition = 'all 0.2s ease';
-
-    btn.addEventListener('click', () => this.toggleModal());
-    document.getElementById('ui-overlay')?.appendChild(btn);
-    return btn;
   }
 
   private createChatBarDOM(): { container: HTMLElement; input: HTMLInputElement } {
@@ -217,6 +191,7 @@ export class MultiplayerUI {
   }
 
   private setupEvents() {
+    document.addEventListener('toggle-multiplayer-modal', () => this.toggleModal());
     this.modalEl.querySelector('#mp-close-btn')?.addEventListener('click', () => this.closeModal());
 
     const nameInput = this.modalEl.querySelector('#mp-player-name') as HTMLInputElement;
@@ -324,9 +299,12 @@ export class MultiplayerUI {
     if (conView) conView.style.display = 'block';
     if (badge) badge.textContent = code;
 
-    this.statusBtnEl.textContent = `房間：${code}`;
-    this.statusBtnEl.style.borderColor = '#22c55e';
-    this.statusBtnEl.style.color = '#86efac';
+    const btn = document.getElementById('hud-multiplayer-btn');
+    if (btn) {
+      btn.innerHTML = `<span>房間: ${code}</span>`;
+      btn.style.borderColor = '#22c55e';
+      btn.style.color = '#86efac';
+    }
 
     this.updatePlayerCount();
   }
@@ -338,9 +316,12 @@ export class MultiplayerUI {
     if (disView) disView.style.display = 'block';
     if (conView) conView.style.display = 'none';
 
-    this.statusBtnEl.textContent = '多人連線';
-    this.statusBtnEl.style.borderColor = 'rgba(56, 189, 248, 0.4)';
-    this.statusBtnEl.style.color = '#38bdf8';
+    const btn = document.getElementById('hud-multiplayer-btn');
+    if (btn) {
+      btn.innerHTML = `<span>多人連線</span>`;
+      btn.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+      btn.style.color = '#38bdf8';
+    }
   }
 
   private updatePlayerCount() {
@@ -349,8 +330,9 @@ export class MultiplayerUI {
     if (info) {
       info.textContent = `目前小隊成員：${count} 人 (含自己)`;
     }
-    if (this.network.roomId) {
-      this.statusBtnEl.textContent = `房間：${this.network.roomId} (${count}人)`;
+    const btn = document.getElementById('hud-multiplayer-btn');
+    if (btn && this.network.roomId) {
+      btn.innerHTML = `<span>房間: ${this.network.roomId} (${count}人)</span>`;
     }
   }
 
@@ -382,7 +364,6 @@ export class MultiplayerUI {
 
   public dispose() {
     this.modalEl.remove();
-    this.statusBtnEl.remove();
     this.chatBarEl.remove();
   }
 }

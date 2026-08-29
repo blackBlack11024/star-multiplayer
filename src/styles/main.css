@@ -1704,6 +1704,28 @@ html, body {
   color: #ffffff;
 }
 
+#hud-multiplayer-btn {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+#hud-multiplayer-btn:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+#hud-multiplayer-btn.connected {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+#hud-multiplayer-btn.connected:hover {
+  background: rgba(74, 222, 128, 0.22);
+  border-color: #4ade80;
+}
+
 .guide-modal {
   position: fixed;
   inset: 24px;

@@ -272,6 +272,15 @@ export class HUD {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }));
         };
 
+        const multiplayerBtn = document.createElement('div');
+        multiplayerBtn.id = 'hud-multiplayer-btn';
+        multiplayerBtn.className = 'guide-badge';
+        multiplayerBtn.innerHTML = `<span>多人連線</span>`;
+        multiplayerBtn.title = '開啟多人連線小隊房間面板';
+        multiplayerBtn.onclick = () => {
+            document.dispatchEvent(new CustomEvent('toggle-multiplayer-modal'));
+        };
+
         const verBadge = document.createElement('div');
         verBadge.className = 'version-badge';
         verBadge.style.fontSize = '11px';
@@ -282,14 +291,15 @@ export class HUD {
         verBadge.style.background = 'rgba(56, 189, 248, 0.12)';
         verBadge.style.borderRadius = '6px';
         verBadge.style.border = '1px solid rgba(56, 189, 248, 0.3)';
-        verBadge.textContent = 'v2.1.0';
-        verBadge.title = 'v2.1.0';
+        verBadge.textContent = 'v2.1.1';
+        verBadge.title = 'v2.1.1';
 
         topRight.appendChild(this.moneyDisplay);
         topRight.appendChild(this.weatherDisplay);
         topRight.appendChild(volumeBar);
         topRight.appendChild(codexBtn);
         topRight.appendChild(guideBtn);
+        topRight.appendChild(multiplayerBtn);
         topRight.appendChild(verBadge);
 
         // 3. Audio Settings Mixer Modal

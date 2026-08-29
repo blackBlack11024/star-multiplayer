@@ -75,6 +75,7 @@ export interface TelescopeStatePacket {
   fov: number;
   isLocked: boolean;
   operatorId: string | null;
+  laserMounted?: boolean;
 }
 
 export interface TelescopeSeizePacket {

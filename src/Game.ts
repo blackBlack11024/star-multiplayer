@@ -275,6 +275,7 @@ export class Game {
   }
 
   private setupMultiplayerNetworking(): void {
+    this.multiplayerTelescopes.setMyOwnerId(this.networkManager.localId);
     this.networkManager.onPeerConnect((peerId) => {
       // Send our own player info to new peers
       const euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -287,6 +288,18 @@ export class Game {
         hatType: this.networkManager.localHatType,
         pos: [this.camera.position.x, this.camera.position.y - 1.7, this.camera.position.z],
         telescopeLevel: gameStore.getState().telescopeLevel || 1,
+      });
+
+      // Broadcast our own telescope position to the peer
+      const tPos = this.telescopeModel.getPosition();
+      this.networkManager.sendTo(peerId, {
+        type: PacketType.TELESCOPE_SPAWN,
+        telescopeId: `tel_${this.networkManager.localId}`,
+        ownerId: this.networkManager.localId,
+        ownerName: this.networkManager.localName,
+        level: gameStore.getState().telescopeLevel || 1,
+        pos: [tPos.x, tPos.y, tPos.z],
+        rotY: this.telescopeModel.getRotationY(),
       });
 
       // If host, also broadcast our deployed telescopes and current game time
@@ -531,15 +544,17 @@ export class Game {
           laserTarget: isLaserActive ? this.laserPointer?.getTargetName() : undefined,
         });
 
-        if (this.activeOperatingTelescopeId && !this.isSpectatingTelescope) {
+        const currentTelId = this.activeOperatingTelescopeId || `tel_${this.networkManager.localId}`;
+        if (!this.isSpectatingTelescope) {
           this.networkManager.broadcast({
             type: PacketType.TELESCOPE_STATE,
-            telescopeId: this.activeOperatingTelescopeId,
+            telescopeId: currentTelId,
             ra: state.telescopeRa,
             dec: state.telescopeDec,
             fov: state.currentFov,
-            isLocked: Boolean(this.multiplayerTelescopes.getTelescope(this.activeOperatingTelescopeId)?.isLocked),
+            isLocked: Boolean(state.isTelescopeLocked),
             operatorId: this.networkManager.localId,
+            laserMounted: Boolean(state.isLaserPointerMounted),
           });
         }
       }
@@ -840,15 +855,8 @@ export class Game {
       const level = gameStore.getState().telescopeLevel || 1;
       const rotY = Math.atan2(forward.x, forward.z);
 
-      this.multiplayerTelescopes.handleTelescopeSpawn({
-        type: PacketType.TELESCOPE_SPAWN,
-        telescopeId,
-        ownerId: this.networkManager.localId,
-        ownerName: this.networkManager.localName,
-        level,
-        pos: [spawnPos.x, spawnPos.y, spawnPos.z],
-        rotY,
-      });
+      // Move local player's physical telescope (along with its mounted laser pointer) to current position
+      this.telescopeModel.setPosition(spawnPos, rotY);
 
       if (this.networkManager.isConnected()) {
         this.networkManager.broadcast({
@@ -861,7 +869,7 @@ export class Game {
           rotY,
         });
       }
-      this.hud.showNotification('已在當前位置成功架設您的專屬望遠鏡！(靠近按 E 可觀測)', 'success');
+      this.hud.showNotification('已將您的望遠鏡架設於當前位置！(靠近按 E 可觀測)', 'success');
     });
 
     // Multiplayer chat input
@@ -1105,12 +1113,14 @@ export class Game {
       this.laserPointer.setVisibleForPhoto(false);
       this.telescopeModel.setMountedLaserVisible(false);
       this.avatarManager.hideLasersForPhoto(true);
+      this.multiplayerTelescopes.hideLasersForPhoto(true);
     } else {
       if (this.wasConstellationsVisibleBeforePhoto && gameStore.getState().showConstellations) {
         this.constellations.setVisible(true);
       }
       this.telescopeModel.setMountedLaserVisible(gameStore.getState().isLaserPointerMounted);
       this.avatarManager.hideLasersForPhoto(false);
+      this.multiplayerTelescopes.hideLasersForPhoto(false);
     }
   }
 
